@@ -10,6 +10,24 @@
  *   cppcheck-suppress nullPointer
  */
 
+/**
+ * list_for_each_entry_safe_reverse - Iterate over list entries and allow
+ * deletes in reverse order
+ * @entry: pointer used as iterator
+ * @safe: @type pointer used to store info for next entry in list
+ * @head: pointer to the head of the list
+ * @member: name of the list_head member variable in struct type of @entry
+ *
+ * The current node (iterator) is allowed to be removed from the list. Any
+ * other modifications to the the list will cause undefined behavior.
+ *
+ * FIXME: remove dependency of __typeof__ extension
+ */
+#define list_for_each_entry_safe_reverse(entry, safe, head, member)        \
+    for (entry = list_entry((head)->prev, __typeof__(*entry), member),     \
+        safe = list_entry(entry->member.prev, __typeof__(*entry), member); \
+         &entry->member != (head); entry = safe,                           \
+        safe = list_entry(safe->member.prev, __typeof__(*entry), member))
 
 static inline int ele_compare(const element_t *a, const element_t *b)
 {
@@ -126,10 +144,10 @@ bool q_insert_head(struct list_head *head, char *s)
 /* Insert an element at tail of queue */
 bool q_insert_tail(struct list_head *head, char *s)
 {
-    if (head == NULL)
+    if (__glibc_unlikely(!head || !s))
         return false;
     element_t *new_ele = e_new(s);
-    if (new_ele == NULL)
+    if (__glibc_unlikely(!new_ele))
         return false;
     list_add_tail(&new_ele->list, head);
     return true;
@@ -141,7 +159,10 @@ element_t *q_remove_head(struct list_head *head, char *sp, size_t bufsize)
     if (head == NULL || list_empty(head))
         return NULL;
     element_t *entry = list_first_entry(head, element_t, list);
-    strncpy(sp, entry->value, bufsize);
+    if (sp && entry->value) {
+        strncpy(sp, entry->value, bufsize);
+        sp[bufsize - 1] = '\0';
+    }
     list_del(&entry->list);
     return entry;
 }
@@ -199,15 +220,26 @@ static inline int min(const int a, const int b)
     return (a > b) ? b : a;
 }
 
-// static void print_list(struct list_head *head)
-// {
-//     element_t *entry;
-//     printf("DEBUG : list contain ");
-//     list_for_each_entry (entry, head, list) {
-//         printf("-> %s", entry->value);
-//     }
-//     printf("\n");
-// }
+static inline void print_list(struct list_head *head)
+{
+    element_t *entry = NULL;
+    printf("DEBUG : list contain ");
+    list_for_each_entry (entry, head, list) {
+        printf("-> %s", entry->value);
+    }
+    printf("\n");
+}
+
+static inline void print_list_reverse(struct list_head *head)
+{
+    element_t *entry, *safe;
+    printf("DEBUG : list in reverse ");
+    list_for_each_entry_safe_reverse(entry, safe, head, list)
+    {
+        printf("-> %s", entry->value);
+    }
+    printf("\n");
+}
 
 /* Delete all nodes that have duplicate string */
 bool q_delete_dup(struct list_head *head)
@@ -280,12 +312,31 @@ void q_reverse(struct list_head *head)
 void q_reverseK(struct list_head *head, int k)
 {
     // https://leetcode.com/problems/reverse-nodes-in-k-group/
-    if (!head || list_empty(head))
+    if (!head || list_empty(head) || k == 1 || list_is_singular(head))
         return;  // nothing to do
 
     if (k >= q_size(head)) {
         q_reverse(head);  // normal reverse
         return;
+    }
+
+    if (k == 2) {  // k = 2, is equal to q_swap()
+        q_swap(head);
+        return;
+    }
+    struct list_head *node, *safe, *cut_start = head;
+    int cnt = 0;
+    list_for_each_safe (node, safe, head) {
+        cnt++;
+        if (cnt == k) {
+            // cut, reverse, and put it back
+            LIST_HEAD(tmp);
+            list_cut_position(&tmp, cut_start, node);
+            q_reverse(&tmp);
+            list_splice(&tmp, cut_start);
+            cut_start = safe->prev;
+            cnt = 0;
+        }
     }
 }
 
@@ -294,12 +345,11 @@ void q_sort(struct list_head *head, bool descend)
 {
     if (!head || list_empty(head) || list_is_singular(head))
         return;
-
     struct list_head *fast = head->next, *slow = head;
     for (; fast != head && fast->next != head; fast = fast->next->next)
         slow = slow->next;
 
-    struct list_head right;
+    LIST_HEAD(right);
     list_cut_position(&right, head, slow);
 
     q_sort(head, descend);
@@ -313,7 +363,8 @@ void q_sort(struct list_head *head, bool descend)
 int q_ascend(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-nodes-from-linked-list/
-    return 0;
+    int cnt = 0;
+    return cnt;
 }
 
 /* Remove every node which has a node with a strictly greater value anywhere to
@@ -321,7 +372,26 @@ int q_ascend(struct list_head *head)
 int q_descend(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-nodes-from-linked-list/
-    return 0;
+    if (!head || list_empty(head))
+        return 0;
+
+    if (list_is_singular(head))
+        return 1;
+
+    int cnt = 0;
+    element_t *entry, *safe, *pivot = NULL;
+    list_for_each_entry_safe_reverse(entry, safe, head, list)
+    {
+        if (!pivot || ele_compare_greater(entry, pivot)) {
+            pivot = entry;
+            cnt++;
+        } else {
+            list_del(&entry->list);
+            q_release_element(entry);
+            entry = safe;
+        }
+    }
+    return cnt;
 }
 
 

@@ -194,10 +194,47 @@ bool q_delete_mid(struct list_head *head)
     return true;
 }
 
+static inline int min(const int a, const int b)
+{
+    return (a > b) ? b : a;
+}
+
+// static void print_list(struct list_head *head)
+// {
+//     element_t *entry;
+//     printf("DEBUG : list contain ");
+//     list_for_each_entry (entry, head, list) {
+//         printf("-> %s", entry->value);
+//     }
+//     printf("\n");
+// }
+
 /* Delete all nodes that have duplicate string */
 bool q_delete_dup(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-duplicates-from-sorted-list-ii/
+    // assume the list is sorted
+    if (!head)
+        return false;
+    if (list_empty(head))  // empty is already dedup
+        return true;
+
+    struct list_head *node = NULL, *safe = NULL;
+    bool delete_next = false;
+    list_for_each_safe (node, safe, head) {
+        element_t *cur, *next;
+        cur = list_entry(node, element_t, list);
+        next = list_entry(node->next, element_t, list);
+        bool match = (node->next != head);
+        if (match)
+            match &= (strcmp(cur->value, next->value) == 0);
+        if (match || delete_next) {
+            list_del(node);
+            q_release_element(cur);
+        }
+        delete_next = match;
+    }
+
     return true;
 }
 
@@ -243,6 +280,13 @@ void q_reverse(struct list_head *head)
 void q_reverseK(struct list_head *head, int k)
 {
     // https://leetcode.com/problems/reverse-nodes-in-k-group/
+    if (!head || list_empty(head))
+        return;  // nothing to do
+
+    if (k >= q_size(head)) {
+        q_reverse(head);  // normal reverse
+        return;
+    }
 }
 
 /* Sort elements of queue in ascending/descending order */
